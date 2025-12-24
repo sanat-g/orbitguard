@@ -75,13 +75,11 @@ def closest_approach_constant_velocity(
             return start_ts, d1
         return end_ts, d2
 
-    # --- Core calculus result (unconstrained minimum) ---
+    # result (unconstrained minimum)
     # We want to minimize ||r(t)||^2 where:
-    #   r(t) = r0 + v*(t - t0)
-    #
+    # r(t) = r0 + v*(t - t0)
     # The minimum happens at:
     #   t* = t0 - (r0·v)/(v·v)
-    #
     # r0·v (dot product) measures how much the object is moving
     # toward (+negative) or away (+positive) from the origin at the epoch.
     rv = rx*vx + ry*vy + rz*vz  # r0·v
@@ -89,18 +87,18 @@ def closest_approach_constant_velocity(
     # Unconstrained best time (could be outside the scan window)
     t_star = t0 - (rv / v2)
 
-    # --- Constrain to scan window ---
+    #constrain to scan window
     # Even if the best mathematical time is outside the window,
-    # the closest point *within the window* must be at a boundary.
+    # the closest point within the window must be at a boundary.
     t_star = clamp(t_star, t1, t2)
 
-    # --- Compute position at t_star ---
+    #Compute position at t_star
     dt = t_star - t0  # seconds after epoch
     cx = rx + vx * dt
     cy = ry + vy * dt
     cz = rz + vz * dt
 
-    # --- Euclidean distance from origin ---
+    # euclidean distance from origin 
     dmin = math.sqrt(cx*cx + cy*cy + cz*cz)
 
     # Return integer timestamp and min distance
