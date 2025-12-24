@@ -1,4 +1,3 @@
-# orbitguard/core/scan_math.py
 from __future__ import annotations
 import math
 

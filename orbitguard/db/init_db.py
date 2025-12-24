@@ -1,4 +1,3 @@
-# orbitguard/db/init_db.py
 from orbitguard.db.database import engine
 from orbitguard.db.models import Base
 

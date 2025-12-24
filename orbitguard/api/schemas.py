@@ -1,4 +1,3 @@
-# orbitguard/api/schemas.py
 #What this file does: 
 '''
  - validates input automatically: ScanCreate tells fastapi 
