@@ -17,7 +17,7 @@ def parse_cd_to_unix_seconds(cd: str) -> int:
     for fmt in FORMATS:
         try:
             dt = datetime.strptime(cd, fmt)
-            # Treat as UTC for MVP.
+            # treated as utc for mvp
             dt = dt.replace(tzinfo=timezone.utc)
             return int(dt.timestamp())
         except ValueError as e:

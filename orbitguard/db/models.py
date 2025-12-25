@@ -115,3 +115,26 @@ class Alert(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
     )
+
+class ApproachEvent(Base):
+    __tablename__ = "approach_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+
+    # Object designation/id (CAD field: des)
+    object_id: Mapped[str] = mapped_column(String, index=True)
+    name: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    # Approach time (CAD field: cd converted to unix seconds)
+    approach_ts: Mapped[int] = mapped_column(Integer, index=True)
+
+    # Miss distance in km (CAD field: dist in AU -> km)
+    miss_distance_km: Mapped[float] = mapped_column(Float, index=True)
+
+    # Relative velocity in km/s (CAD field: v_rel)
+    v_rel_km_s: Mapped[float] = mapped_column(Float)
+
+    # Optional: where it came from (nice for explainability)
+    source: Mapped[str] = mapped_column(String, default="NASA_JPL_CAD")
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

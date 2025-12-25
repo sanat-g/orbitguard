@@ -1,6 +1,8 @@
 from fastapi import FastAPI, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from orbitguard.db.models import RiskEvent, Alert
+from orbitguard.api.schemas import RiskOut, AlertOut
 from orbitguard.api.deps import get_db
 from orbitguard.api.schemas import ScanCreate, ScanOut
 from orbitguard.db.models import ScanJob, JobStatus
@@ -66,3 +68,61 @@ def get_scan(job_id: int, db: Session = Depends(get_db)):
         max_attempts=job.max_attempts,
         error=job.error,
     )
+
+@app.get("/risks", response_model=list[RiskOut])
+def list_risks(job_id: int | None = None, db: Session = Depends(get_db)):
+    q = db.query(RiskEvent)
+    if job_id is not None:
+        q = q.filter(RiskEvent.job_id == job_id)
+
+    risks = q.order_by(RiskEvent.risk_score.desc()).all()
+
+    return [
+        RiskOut(
+            id=r.id,
+            job_id=r.job_id,
+            object_id=r.object_id,
+            min_distance_km=r.min_distance_km,
+            tca_ts=r.tca_ts,
+            risk_score=r.risk_score,
+        )
+        for r in risks
+    ]
+
+
+@app.get("/alerts", response_model=list[AlertOut])
+def list_alerts(status: str | None = "OPEN", db: Session = Depends(get_db)):
+    q = db.query(Alert)
+    if status is not None:
+        q = q.filter(Alert.status == status)
+
+    alerts = q.order_by(Alert.risk_score.desc()).all()
+
+    return [
+        AlertOut(
+            id=a.id,
+            object_id=a.object_id,
+            tca_ts=a.tca_ts,
+            min_distance_km=a.min_distance_km,
+            risk_score=a.risk_score,
+            status=a.status,
+            dedupe_key=a.dedupe_key,
+        )
+        for a in alerts
+    ]
+
+
+@app.get("/risks/{risk_id}/explain")
+def explain_risk(risk_id: int, db: Session = Depends(get_db)):
+    risk = db.query(RiskEvent).filter(RiskEvent.id == risk_id).first()
+    if risk is None:
+        raise HTTPException(status_code=404, detail="Risk not found")
+
+    return {
+        "risk_id": risk.id,
+        "object_id": risk.object_id,
+        "min_distance_km": risk.min_distance_km,
+        "tca_ts": risk.tca_ts,
+        "risk_score": risk.risk_score,
+        "explanation_json": risk.explanation_json,
+    }

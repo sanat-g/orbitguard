@@ -1,21 +1,19 @@
 from __future__ import annotations
 import json
 
+
 def risk_score(threshold_km: float, min_distance_km: float) -> float:
     """
-    Simple score in [0, 1].
-    Higher score = closer to earth
+    MVP score in [0, 1]:
+      score = 1 - (min_distance / threshold)
 
-    If min_distance == threshold -> 0.5
-    If min_distance much smaller -> approaches 1+
-    If min_distance bigger -> below 0.5
-
+    - At threshold: 0
+    - Closer than threshold: approaches 1
     """
-    if min_distance_km <= 0:
-        return 1.0
-    ratio = threshold_km / min_distance_km
-    # Clamp for mvp purposes
-    return max(0.0, min(1.0, ratio))
+    if threshold_km <= 0:
+        return 0.0
+    s = 1.0 - (min_distance_km / threshold_km)
+    return max(0.0, min(1.0, s))
 
 def build_explanation_json(
     object_id: str,

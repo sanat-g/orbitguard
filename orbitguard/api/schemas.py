@@ -24,3 +24,20 @@ class ScanOut(BaseModel):
     attempts: int
     max_attempts: int
     error: str | None
+
+class RiskOut(BaseModel):
+    id: int
+    job_id: int
+    object_id: str
+    min_distance_km: float
+    tca_ts: int
+    risk_score: float
+
+class AlertOut(BaseModel):
+    id: int
+    object_id: str
+    tca_ts: int
+    min_distance_km: float
+    risk_score: float
+    status: str
+    dedupe_key: str

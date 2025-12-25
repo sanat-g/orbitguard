@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
 from orbitguard.db.database import SessionLocal
-from orbitguard.db.models import Object, ScanJob, RiskEvent, Alert, JobStatus, AlertStatus
+from orbitguard.db.models import ApproachEvent, ScanJob, RiskEvent, Alert, JobStatus, AlertStatus
 from orbitguard.core.scan_math import closest_approach_constant_velocity
 from orbitguard.core.scoring import risk_score, build_explanation_json
 
@@ -96,22 +96,23 @@ def process_job(db: Session, job: ScanJob) -> None:
           - write a RiskEvent row
           - create a deduped Alert
     """
-    objects = db.query(Object).all()
+    events = (
+        db.query(ApproachEvent)
+        .filter(ApproachEvent.approach_ts >= job.start_ts)
+        .filter(ApproachEvent.approach_ts <= job.end_ts)
+        .all()
+    )
 
-    for obj in objects:
-        tca_ts, dmin = closest_approach_constant_velocity(
-            epoch_ts=obj.epoch_ts,
-            x_km=obj.x_km, y_km=obj.y_km, z_km=obj.z_km,
-            vx_km_s=obj.vx_km_s, vy_km_s=obj.vy_km_s, vz_km_s=obj.vz_km_s,
-            start_ts=job.start_ts,
-            end_ts=job.end_ts,
-        )
+    for ev in events:
+        dmin = ev.miss_distance_km
+        tca_ts = ev.approach_ts
 
         if dmin <= job.threshold_km:
             score = risk_score(job.threshold_km, dmin)
+
             expl = build_explanation_json(
-                object_id=obj.object_id,
-                epoch_ts=obj.epoch_ts,
+                object_id=ev.object_id,
+                epoch_ts=ev.approach_ts,   
                 start_ts=job.start_ts,
                 end_ts=job.end_ts,
                 threshold_km=job.threshold_km,
@@ -122,18 +123,18 @@ def process_job(db: Session, job: ScanJob) -> None:
 
             risk = RiskEvent(
                 job_id=job.id,
-                object_id=obj.object_id,
+                object_id=ev.object_id,
                 min_distance_km=dmin,
                 tca_ts=tca_ts,
                 risk_score=score,
                 explanation_json=expl,
             )
             db.add(risk)
-            db.commit() 
+            db.commit()
 
             create_alert_deduped(
                 db=db,
-                object_id=obj.object_id,
+                object_id=ev.object_id,
                 tca_ts=tca_ts,
                 min_distance_km=dmin,
                 score=score,
