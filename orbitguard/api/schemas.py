@@ -9,11 +9,21 @@
 '''
 
 from pydantic import BaseModel, Field
+from orbitguard.api.time_utils import to_unix_seconds
+from pydantic import BaseModel, field_validator
+from datetime import datetime
 
 class ScanCreate(BaseModel):
-    start_ts: int = Field(..., description="Unix timestamp (seconds)")
-    end_ts: int = Field(..., description="Unix timestamp (seconds)")
-    threshold_km: float = Field(..., gt=0, description="Distance threshold in km")
+    # Users can send int unix seconds OR ISO strings OR datetimes
+    start_ts: int | str | datetime
+    end_ts: int | str | datetime
+    threshold_km: float
+
+    @field_validator("start_ts", "end_ts", mode="before")
+    @classmethod
+    def _parse_ts(cls, v):
+        return to_unix_seconds(v)
+
 
 class ScanOut(BaseModel):
     id: int
@@ -41,3 +51,14 @@ class AlertOut(BaseModel):
     risk_score: float
     status: str
     dedupe_key: str
+
+class ScanSummaryOut(BaseModel):
+    job_id: int
+    status: str
+    window_start_ts: int
+    window_end_ts: int
+    threshold_km: float
+    events_in_window: int
+    risks_found: int
+    alerts_linked: int
+

@@ -1,13 +1,31 @@
 from fastapi import FastAPI, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from orbitguard.db.models import RiskEvent, Alert
+from orbitguard.db.models import RiskEvent, Alert, AlertStatus
 from orbitguard.api.schemas import RiskOut, AlertOut
 from orbitguard.api.deps import get_db
 from orbitguard.api.schemas import ScanCreate, ScanOut
 from orbitguard.db.models import ScanJob, JobStatus
+from orbitguard.api.schemas import ScanSummaryOut
+from orbitguard.db.models import ScanJob, ApproachEvent, RiskEvent, Alert
+from fastapi.middleware.cors import CORSMiddleware
+
 
 app = FastAPI(title="OrbitGuard")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://127.0.0.1:5500",
+        "http://localhost:5500",
+        "http://127.0.0.1:8080",
+        "http://localhost:8080",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 #Endpoint to check whether the server is alive
 @app.get("/health")
@@ -111,6 +129,67 @@ def list_alerts(status: str | None = "OPEN", db: Session = Depends(get_db)):
         for a in alerts
     ]
 
+@app.get("/alerts/{alert_id}", response_model=AlertOut)
+def get_alert(alert_id: int, db: Session = Depends(get_db)):
+    alert = db.query(Alert).filter(Alert.id == alert_id).first()
+    if alert is None:
+        raise HTTPException(status_code=404, detail="Alert not found")
+
+    return AlertOut(
+        id=alert.id,
+        object_id=alert.object_id,
+        tca_ts=alert.tca_ts,
+        min_distance_km=alert.min_distance_km,
+        risk_score=alert.risk_score,
+        status=alert.status,
+        dedupe_key=alert.dedupe_key,
+    )
+
+
+@app.post("/alerts/{alert_id}/ack", response_model=AlertOut)
+def ack_alert(alert_id: int, db: Session = Depends(get_db)):
+    alert = db.query(Alert).filter(Alert.id == alert_id).first()
+    if alert is None:
+        raise HTTPException(status_code=404, detail="Alert not found")
+
+    # Idempotent: acking an already ACKED/RESOLVED alert shouldn't error
+    if alert.status == AlertStatus.OPEN.value:
+        alert.status = AlertStatus.ACKED.value
+        db.commit()
+        db.refresh(alert)
+
+    return AlertOut(
+        id=alert.id,
+        object_id=alert.object_id,
+        tca_ts=alert.tca_ts,
+        min_distance_km=alert.min_distance_km,
+        risk_score=alert.risk_score,
+        status=alert.status,
+        dedupe_key=alert.dedupe_key,
+    )
+
+
+@app.post("/alerts/{alert_id}/resolve", response_model=AlertOut)
+def resolve_alert(alert_id: int, db: Session = Depends(get_db)):
+    alert = db.query(Alert).filter(Alert.id == alert_id).first()
+    if alert is None:
+        raise HTTPException(status_code=404, detail="Alert not found")
+
+    # Idempotent: resolving an already RESOLVED alert shouldn't error
+    if alert.status != AlertStatus.RESOLVED.value:
+        alert.status = AlertStatus.RESOLVED.value
+        db.commit()
+        db.refresh(alert)
+
+    return AlertOut(
+        id=alert.id,
+        object_id=alert.object_id,
+        tca_ts=alert.tca_ts,
+        min_distance_km=alert.min_distance_km,
+        risk_score=alert.risk_score,
+        status=alert.status,
+        dedupe_key=alert.dedupe_key,
+    )
 
 @app.get("/risks/{risk_id}/explain")
 def explain_risk(risk_id: int, db: Session = Depends(get_db)):
@@ -126,3 +205,48 @@ def explain_risk(risk_id: int, db: Session = Depends(get_db)):
         "risk_score": risk.risk_score,
         "explanation_json": risk.explanation_json,
     }
+
+
+@app.get("/scans/{job_id}/summary", response_model=ScanSummaryOut)
+def scan_summary(job_id: int, db: Session = Depends(get_db)):
+    job = db.query(ScanJob).filter(ScanJob.id == job_id).first()
+    if job is None:
+        raise HTTPException(status_code=404, detail="Scan job not found")
+
+    # How many CAD events exist inside the requested window?
+    events_in_window = (
+        db.query(ApproachEvent)
+        .filter(ApproachEvent.approach_ts >= job.start_ts)
+        .filter(ApproachEvent.approach_ts <= job.end_ts)
+        .count()
+    )
+
+    # How many risks did THIS job produce?
+    risks_found = (
+        db.query(RiskEvent)
+        .filter(RiskEvent.job_id == job.id)
+        .count()
+    )
+
+    # How many alerts correspond to risks from THIS job?
+    # (simple linkage by object_id + tca_ts match)
+    alerts_linked = (
+        db.query(Alert)
+        .join(
+            RiskEvent,
+            (Alert.object_id == RiskEvent.object_id) & (Alert.tca_ts == RiskEvent.tca_ts),
+        )
+        .filter(RiskEvent.job_id == job.id)
+        .count()
+    )
+
+    return ScanSummaryOut(
+        job_id=job.id,
+        status=job.status,
+        window_start_ts=job.start_ts,
+        window_end_ts=job.end_ts,
+        threshold_km=job.threshold_km,
+        events_in_window=events_in_window,
+        risks_found=risks_found,
+        alerts_linked=alerts_linked,
+    )
