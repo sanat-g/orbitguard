@@ -13,7 +13,6 @@ What it does:
 
 
 from __future__ import annotations
-
 from sqlalchemy.orm import Session
 
 from orbitguard.db.database import SessionLocal
