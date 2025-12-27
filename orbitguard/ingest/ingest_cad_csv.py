@@ -1,16 +1,26 @@
-# orbitguard/ingest/ingest_cad_csv.py
 """
-Reads cad.csv (filled from CAD API) and inserts the objects into SQLite.
+Ingests NASA/JPL CAD close-approach data from a cad.csv into SQLite
 
-- CAD provides close-approach records (cd, dist in AU, v_rel km/s), not full 3D vectors.
-- For MVP constant-velocity scanning, we convert each record into a simple proxy:
-    position: (x=dist_km, y=0, z=0)
-    velocity: (vx=-v_rel, vy=0, vz=0)
-  at epoch_ts = close-approach time.
+What the CAD data means:
+- Each row is a single close-approach event for one object relative to Earth
+- It includes:
+  - object identifier (des / fullname)
+  - close-approach time ("cd")
+  - miss distance ("dist", in AU)
+  - relative velocity ("v_rel", in km/s)
 
-This means the object is moving "toward" Earth along the x-axis.
-It's not astrophysically accurate, but it is deterministic for an mvp.
+What this script does:
+- Reads data/raw/cad.csv (produced by download_cad.py)
+- Parses the CAD "cd" time into unix time
+- Converts miss distance from AU to km
+- Inserts each row as an ApproachEvent in the database
+
+Why we store ApproachEvent (not full orbits):
+- OrbitGuard's MVP is an evaluation engine, not an orbit propagator
+- We treat CAD's published close-approach events as the “ground truth” inputs
+  for scanning time windows and flagging risks deterministically
 """
+
 from __future__ import annotations
 
 import csv

@@ -43,15 +43,6 @@ class RiskOut(BaseModel):
     tca_ts: int
     risk_score: float
 
-class AlertOut(BaseModel):
-    id: int
-    object_id: str
-    tca_ts: int
-    min_distance_km: float
-    risk_score: float
-    status: str
-    dedupe_key: str
-
 class ScanSummaryOut(BaseModel):
     job_id: int
     status: str
@@ -60,5 +51,4 @@ class ScanSummaryOut(BaseModel):
     threshold_km: float
     events_in_window: int
     risks_found: int
-    alerts_linked: int
 

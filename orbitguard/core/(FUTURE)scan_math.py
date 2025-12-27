@@ -1,3 +1,11 @@
+'''
+FILE IS NOT USED IN CURRENT MVP. This file would be of use for future state-vector scanning mode. 
+If OrbitGuard were to be upgraded to store each object's position and velocity at an epoch in the 
+objects table within the database, then this program would be of use. The worker would compute the 
+closest approach within a time window using those vectors, rather than relying on NASA CAD API 
+events.
+'''
+
 from __future__ import annotations
 import math
 

@@ -1,18 +1,31 @@
+"""
+FastAPI application for OrbitGuard.
+
+What this file does:
+- Creates the HTTP API server that the UI and tools talk to
+- Enables CORS so a browser-based UI (served from localhost) can call the API
+- Exposes endpoints to:
+  - health-check the server
+  - create scan jobs (queued work)
+  - fetch scan job status
+  - list risk results produced by the worker
+  - fetch stored explanations for a risk
+  - return a summary for a scan job (counts of events scanned + risks found)
+"""
+
+
 from fastapi import FastAPI, Depends, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
-from orbitguard.db.models import RiskEvent, Alert, AlertStatus
-from orbitguard.api.schemas import RiskOut, AlertOut
 from orbitguard.api.deps import get_db
-from orbitguard.api.schemas import ScanCreate, ScanOut
-from orbitguard.db.models import ScanJob, JobStatus
-from orbitguard.api.schemas import ScanSummaryOut
-from orbitguard.db.models import ScanJob, ApproachEvent, RiskEvent, Alert
-from fastapi.middleware.cors import CORSMiddleware
+from orbitguard.api.schemas import ScanCreate, ScanOut, RiskOut, ScanSummaryOut
+from orbitguard.db.models import ScanJob, JobStatus, ApproachEvent, RiskEvent
 
 
 app = FastAPI(title="OrbitGuard")
 
+# Allow the browser UI (ui/index.html served on a simple local server) to call the API
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -27,20 +40,19 @@ app.add_middleware(
 )
 
 
-#Endpoint to check whether the server is alive
+# Endpoint to check whether the server is alive
 @app.get("/health")
 def health():
     return {"status": "ok"}
 
-#The endpoint creates a scan job and stores it in the database. 
-#response_model = ScanOut: means FastAPI will validate your return object matches ScanOut shape
+
+# Create a scan job (does NOT run it immediately)
 @app.post("/scans", response_model=ScanOut)
 def create_scan(scan: ScanCreate, db: Session = Depends(get_db)):
     # basic validation (business rules)
-    if scan.start_ts >= scan.end_ts:
-        raise HTTPException(status_code=400, detail="start_ts must be < end_ts")
+    if scan.end_ts <= scan.start_ts:
+        raise HTTPException(status_code=400, detail="end_ts must be greater than start_ts")
 
-    #Creates a ScanJob ORM object (not yet written to db)
     job = ScanJob(
         start_ts=scan.start_ts,
         end_ts=scan.end_ts,
@@ -49,11 +61,9 @@ def create_scan(scan: ScanCreate, db: Session = Depends(get_db)):
     )
 
     db.add(job)
-    #Write changes to db
     db.commit()
-    db.refresh(job)  # pulls generated id + defaults from DB
+    db.refresh(job)
 
-    #return a response object matching ScanOut (converting orm -> pydantic model)
     return ScanOut(
         id=job.id,
         start_ts=job.start_ts,
@@ -66,16 +76,13 @@ def create_scan(scan: ScanCreate, db: Session = Depends(get_db)):
     )
 
 
-#Endpoint lets you check the status and details of a scan job based on its id. 
+# Get scan job status/details
 @app.get("/scans/{job_id}", response_model=ScanOut)
 def get_scan(job_id: int, db: Session = Depends(get_db)):
-    #look for the row in table with that id
     job = db.query(ScanJob).filter(ScanJob.id == job_id).first()
-    #if no row exists, return error
     if job is None:
         raise HTTPException(status_code=404, detail="Scan job not found")
 
-    #return the job's fields as json, in scanout format
     return ScanOut(
         id=job.id,
         start_ts=job.start_ts,
@@ -87,6 +94,8 @@ def get_scan(job_id: int, db: Session = Depends(get_db)):
         error=job.error,
     )
 
+
+# List risks (optionally filtered to a specific job)
 @app.get("/risks", response_model=list[RiskOut])
 def list_risks(job_id: int | None = None, db: Session = Depends(get_db)):
     q = db.query(RiskEvent)
@@ -108,89 +117,7 @@ def list_risks(job_id: int | None = None, db: Session = Depends(get_db)):
     ]
 
 
-@app.get("/alerts", response_model=list[AlertOut])
-def list_alerts(status: str | None = "OPEN", db: Session = Depends(get_db)):
-    q = db.query(Alert)
-    if status is not None:
-        q = q.filter(Alert.status == status)
-
-    alerts = q.order_by(Alert.risk_score.desc()).all()
-
-    return [
-        AlertOut(
-            id=a.id,
-            object_id=a.object_id,
-            tca_ts=a.tca_ts,
-            min_distance_km=a.min_distance_km,
-            risk_score=a.risk_score,
-            status=a.status,
-            dedupe_key=a.dedupe_key,
-        )
-        for a in alerts
-    ]
-
-@app.get("/alerts/{alert_id}", response_model=AlertOut)
-def get_alert(alert_id: int, db: Session = Depends(get_db)):
-    alert = db.query(Alert).filter(Alert.id == alert_id).first()
-    if alert is None:
-        raise HTTPException(status_code=404, detail="Alert not found")
-
-    return AlertOut(
-        id=alert.id,
-        object_id=alert.object_id,
-        tca_ts=alert.tca_ts,
-        min_distance_km=alert.min_distance_km,
-        risk_score=alert.risk_score,
-        status=alert.status,
-        dedupe_key=alert.dedupe_key,
-    )
-
-
-@app.post("/alerts/{alert_id}/ack", response_model=AlertOut)
-def ack_alert(alert_id: int, db: Session = Depends(get_db)):
-    alert = db.query(Alert).filter(Alert.id == alert_id).first()
-    if alert is None:
-        raise HTTPException(status_code=404, detail="Alert not found")
-
-    # Idempotent: acking an already ACKED/RESOLVED alert shouldn't error
-    if alert.status == AlertStatus.OPEN.value:
-        alert.status = AlertStatus.ACKED.value
-        db.commit()
-        db.refresh(alert)
-
-    return AlertOut(
-        id=alert.id,
-        object_id=alert.object_id,
-        tca_ts=alert.tca_ts,
-        min_distance_km=alert.min_distance_km,
-        risk_score=alert.risk_score,
-        status=alert.status,
-        dedupe_key=alert.dedupe_key,
-    )
-
-
-@app.post("/alerts/{alert_id}/resolve", response_model=AlertOut)
-def resolve_alert(alert_id: int, db: Session = Depends(get_db)):
-    alert = db.query(Alert).filter(Alert.id == alert_id).first()
-    if alert is None:
-        raise HTTPException(status_code=404, detail="Alert not found")
-
-    # Idempotent: resolving an already RESOLVED alert shouldn't error
-    if alert.status != AlertStatus.RESOLVED.value:
-        alert.status = AlertStatus.RESOLVED.value
-        db.commit()
-        db.refresh(alert)
-
-    return AlertOut(
-        id=alert.id,
-        object_id=alert.object_id,
-        tca_ts=alert.tca_ts,
-        min_distance_km=alert.min_distance_km,
-        risk_score=alert.risk_score,
-        status=alert.status,
-        dedupe_key=alert.dedupe_key,
-    )
-
+# Explain a specific risk (returns stored explanation)
 @app.get("/risks/{risk_id}/explain")
 def explain_risk(risk_id: int, db: Session = Depends(get_db)):
     risk = db.query(RiskEvent).filter(RiskEvent.id == risk_id).first()
@@ -207,13 +134,13 @@ def explain_risk(risk_id: int, db: Session = Depends(get_db)):
     }
 
 
+# Scan summary (no alerts)
 @app.get("/scans/{job_id}/summary", response_model=ScanSummaryOut)
 def scan_summary(job_id: int, db: Session = Depends(get_db)):
     job = db.query(ScanJob).filter(ScanJob.id == job_id).first()
     if job is None:
         raise HTTPException(status_code=404, detail="Scan job not found")
 
-    # How many CAD events exist inside the requested window?
     events_in_window = (
         db.query(ApproachEvent)
         .filter(ApproachEvent.approach_ts >= job.start_ts)
@@ -221,21 +148,8 @@ def scan_summary(job_id: int, db: Session = Depends(get_db)):
         .count()
     )
 
-    # How many risks did THIS job produce?
     risks_found = (
         db.query(RiskEvent)
-        .filter(RiskEvent.job_id == job.id)
-        .count()
-    )
-
-    # How many alerts correspond to risks from THIS job?
-    # (simple linkage by object_id + tca_ts match)
-    alerts_linked = (
-        db.query(Alert)
-        .join(
-            RiskEvent,
-            (Alert.object_id == RiskEvent.object_id) & (Alert.tca_ts == RiskEvent.tca_ts),
-        )
         .filter(RiskEvent.job_id == job.id)
         .count()
     )
@@ -248,5 +162,4 @@ def scan_summary(job_id: int, db: Session = Depends(get_db)):
         threshold_km=job.threshold_km,
         events_in_window=events_in_window,
         risks_found=risks_found,
-        alerts_linked=alerts_linked,
     )

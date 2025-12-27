@@ -1,15 +1,19 @@
+'''
+- Risk Score: 
+-- computes a risk score in the range of 0 to 1 to quantify the closeness of an object
+-- score = 1 - (min_distance/threshold)
+-- a closer object scores higher
+
+- Build Explanation JSON: 
+-- builds a JSON string that stores the inputs and outputs of a scan result. Is stored in SQLite
+'''
+
+
 from __future__ import annotations
 import json
 
 
 def risk_score(threshold_km: float, min_distance_km: float) -> float:
-    """
-    MVP score in [0, 1]:
-      score = 1 - (min_distance / threshold)
-
-    - At threshold: 0
-    - Closer than threshold: approaches 1
-    """
     if threshold_km <= 0:
         return 0.0
     s = 1.0 - (min_distance_km / threshold_km)

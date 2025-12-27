@@ -1,37 +1,29 @@
-"""
-What this worker does:
-- Looks for the next pending scan job in the database
-- Marks it as running so it won't be picked up again
-- Loads all objects from the objects table
-- For each object, program computes its closest approach to Earth within the job's time window
-- If the object comes within the threshold distance, it:
-    - writes a RiskEvent (per-job result record)
-    - creates/updates an Alert (deduped so you don't spam duplicates)
-- Marks the job succeeded if everything goes well
-- On error, increments attempts and either retries later or marks failed
-"""
+'''
+Background worker for scan jobs. 
+
+What it does: 
+-- Checks the database for the oldest pending scan job
+-- Claims the job by changing its status to "running" (so two workers don't do the same job)
+-- Scans all the stored ApproachEvent rows that fall within the job's time window 
+-- Flags events whose miss distance is less than or equal to threshold km and writes RiskEvent rows
+-- Stores an explanation JSON for each risk (shows why it was flagged)
+-- Marks the job as succeeded once finished, or failed if error occurs
+
+'''
+
 
 from __future__ import annotations
 
-import time
-from datetime import datetime
 from sqlalchemy.orm import Session
-from sqlalchemy.exc import IntegrityError
 
 from orbitguard.db.database import SessionLocal
-from orbitguard.db.models import ApproachEvent, ScanJob, RiskEvent, Alert, JobStatus, AlertStatus
-from orbitguard.core.scan_math import closest_approach_constant_velocity
+from orbitguard.db.models import ApproachEvent, ScanJob, RiskEvent, JobStatus
 from orbitguard.core.scoring import risk_score, build_explanation_json
-
-
-def hour_bucket(ts: int) -> int:
-    """rounds timestamp down to the start of its hour, so alerts don't spam duplicates"""
-    return ts - (ts % 3600)
 
 
 def claim_next_job(db: Session) -> ScanJob | None:
     """
-    Find the oldest pending job and atomically mark it as running.
+    Find the oldest pending job and mark it as RUNNING so it won't be picked up again.
     """
     job = (
         db.query(ScanJob)
@@ -49,52 +41,15 @@ def claim_next_job(db: Session) -> ScanJob | None:
     return job
 
 
-def create_alert_deduped(
-    db: Session,
-    object_id: str,
-    tca_ts: int,
-    min_distance_km: float,
-    score: float,
-    threshold_km: float,
-) -> None:
-    """
-    creates an open alert for a risky object, while preventing duplicates. 
-
-        - We build a dedupe_key from:
-        (object_id, hour_bucket(tca_ts), threshold_km)
-
-        if an alert with this key already exists, we know it's a duplicate. 
-
-    """
-    dedupe_key = f"{object_id}:{hour_bucket(tca_ts)}:{int(threshold_km)}"
-
-    alert = Alert(
-        object_id=object_id,
-        tca_ts=tca_ts,
-        min_distance_km=min_distance_km,
-        risk_score=score,
-        status=AlertStatus.OPEN.value,
-        dedupe_key=dedupe_key,
-    )
-    db.add(alert)
-    try:
-        db.commit()
-    except IntegrityError:
-        # Dedupe hit: alert already exists, so do nothing
-        db.rollback()
-
-
 def process_job(db: Session, job: ScanJob) -> None:
     """
-    Runs the actual scan math for one job
+    CAD-correct scan:
+    - Each ApproachEvent already represents a closest-approach event at approach_ts
+    - We flag an event if:
+        job.start_ts <= approach_ts <= job.end_ts
+        AND miss_distance_km <= job.threshold_km
 
-    For every object in the database:
-      - Compute (tca_ts, min_distance_km) within [job.start_ts, job.end_ts]
-      - If min_distance_km <= job.threshold_km:
-          - compute a risk score
-          - build an explanation JSON structure
-          - write a RiskEvent row
-          - create a deduped Alert
+    For each flagged event we create a RiskEvent (per-job result record).
     """
     events = (
         db.query(ApproachEvent)
@@ -112,7 +67,7 @@ def process_job(db: Session, job: ScanJob) -> None:
 
             expl = build_explanation_json(
                 object_id=ev.object_id,
-                epoch_ts=ev.approach_ts,   
+                epoch_ts=ev.approach_ts,   # for CAD, epoch == approach time
                 start_ts=job.start_ts,
                 end_ts=job.end_ts,
                 threshold_km=job.threshold_km,
@@ -130,21 +85,14 @@ def process_job(db: Session, job: ScanJob) -> None:
                 explanation_json=expl,
             )
             db.add(risk)
-            db.commit()
 
-            create_alert_deduped(
-                db=db,
-                object_id=ev.object_id,
-                tca_ts=tca_ts,
-                min_distance_km=dmin,
-                score=score,
-                threshold_km=job.threshold_km,
-            )
+    # Commit once at the end (faster + cleaner than committing per row)
+    db.commit()
 
 
 def run_once() -> None:
     """
-    Runs a single job and then exits
+    Runs a single job and then exits.
     """
     db = SessionLocal()
     try:
@@ -166,13 +114,15 @@ def run_once() -> None:
 
             if job.attempts < job.max_attempts:
                 job.status = JobStatus.PENDING.value
-                print(f"Job {job.id} failed; retrying later (attempt {job.attempts}/{job.max_attempts}). Error: {e}")
+                print(
+                    f"Job {job.id} failed; retrying later "
+                    f"(attempt {job.attempts}/{job.max_attempts}). Error: {e}"
+                )
             else:
                 job.status = JobStatus.FAILED.value
                 print(f"Job {job.id} failed permanently. Error: {e}")
 
             db.commit()
-
     finally:
         db.close()
 

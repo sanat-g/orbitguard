@@ -1,5 +1,5 @@
 """
-Downloads close-approach data from NASA/JPL SBDB CAD API and saves the following: 
+Downloads close-approach data from NASA/JPL CAD API and saves the following: 
 - data/raw/cad.json
 - data/raw/cad.csv - (CSV version for db readings)
 
@@ -28,7 +28,7 @@ CSV_PATH = RAW_DIR / "cad.csv"
 def download_cad_json(
     dist_max: str = "0.05", # AU by default
     date_min: str = "now",
-    date_max: str = "+60",     
+    date_max: str = "+365",     
     body: str = "Earth",
     sort: str = "date",
 ) -> dict:

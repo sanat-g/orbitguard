@@ -1,3 +1,24 @@
+"""
+Helper function. 
+
+Purpose:
+- OrbitGuard stores times in the database as Unix seconds
+- But users / inputs might provide times in different formats (ints, ISO strings, datetimes)
+- This function normalizes those inputs into unix seconds
+
+What it accepts:
+- int: treated as already-unix seconds and returned unchanged
+- datetime: converted to UTC (assumes UTC if timezone-naive)
+- str:
+  - if it's all digits, treated as a unix timestamp
+  - otherwise parsed as ISO 8601 (supports 'Z' suffix like 2026-01-15T12:00:00Z)
+
+What it returns:
+- int seconds since Jan 1, 1970 (UTC)
+
+If the input type isn't supported, it raises ValueError.
+"""
+
 from __future__ import annotations
 
 from datetime import datetime, timezone

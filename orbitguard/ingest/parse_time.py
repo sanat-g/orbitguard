@@ -1,3 +1,18 @@
+'''
+Helper file for ingestion. 
+
+The NASA/JPL CAD data contains close-approach date/time data (stored in a field called "cd")
+The time and date is given in string formats like "2025-Nov-23 18:00", "2025-Nov-21 12:03:03", etc. 
+
+What this file does: 
+-- converts a CAD "cd" string into an integer Unix timestamp (seconds since Jan 1, 1970 UTC)
+
+Why this is needed: 
+-- OrbitGuard stores time in unix seconds so comparisions in the database stay simple and consistent. 
+
+
+'''
+
 from __future__ import annotations
 
 from datetime import datetime, timezone

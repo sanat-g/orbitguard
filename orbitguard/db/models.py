@@ -1,3 +1,21 @@
+"""
+SQLAlchemy ORM models for OrbitGuard
+
+This file defines the database tables and columns used by the app:
+
+- ApproachEvent: ingestion table for NASA/JPL CAD close-approach events.
+  Each row is one close approach with a timestamp, miss distance (km), and relative velocity (km/s).
+
+- ScanJob: represents a user-requested scan over a time window and distance threshold.
+  Jobs move through a state machine: PENDING → RUNNING → SUCCEEDED/FAILED.
+
+- RiskEvent: the results produced by running a ScanJob.
+  Each row records the closest approach distance/time for an object during that scan,
+  plus a risk score and an explanation blob for the API/UI.
+"""
+
+
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -20,21 +38,14 @@ class Base(DeclarativeBase):
     pass
 
 
-# --- Enums (stored as strings) ---
+# Enums (stored as strings)
 class JobStatus(str, Enum):
     PENDING = "PENDING"
     RUNNING = "RUNNING"
     SUCCEEDED = "SUCCEEDED"
     FAILED = "FAILED"
 
-
-class AlertStatus(str, Enum):
-    OPEN = "OPEN"
-    ACKED = "ACKED"
-    RESOLVED = "RESOLVED"
-
-
-# --- Tables ---
+# Tables
 class Object(Base):
     __tablename__ = "objects"
 
@@ -92,30 +103,7 @@ class RiskEvent(Base):
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
-
-class Alert(Base):
-    __tablename__ = "alerts"
-    __table_args__ = (
-        UniqueConstraint("dedupe_key", name="uq_alert_dedupe_key"),
-    )
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-
-    object_id: Mapped[str] = mapped_column(String, index=True)
-    tca_ts: Mapped[int] = mapped_column(Integer, index=True)
-    min_distance_km: Mapped[float] = mapped_column(Float)
-    risk_score: Mapped[float] = mapped_column(Float)
-
-    status: Mapped[str] = mapped_column(String, default=AlertStatus.OPEN.value, index=True)
-
-    # if an alert already exists with same dedupe_key, don’t create another
-    dedupe_key: Mapped[str] = mapped_column(String, nullable=False)
-
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
-    )
-
+#Data ingested from NASA API propagated into database
 class ApproachEvent(Base):
     __tablename__ = "approach_events"
 
@@ -134,7 +122,6 @@ class ApproachEvent(Base):
     # Relative velocity in km/s (CAD field: v_rel)
     v_rel_km_s: Mapped[float] = mapped_column(Float)
 
-    # Optional: where it came from (nice for explainability)
     source: Mapped[str] = mapped_column(String, default="NASA_JPL_CAD")
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
