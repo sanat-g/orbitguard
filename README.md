@@ -7,7 +7,7 @@ It is designed as a **backend engineering project**, focusing on **job processin
 
 OrbitGuard answers a single question:
 
-> **“Given what we already know, which objects pass close to Earth within a specific time window?”**
+**“Given what we already know, which objects pass close to Earth within a specific time window?”**
 
 It:
 - Ingests real NASA/JPL close-approach (CAD) datasets
@@ -17,8 +17,6 @@ It:
 - Produces risk outputs with explanation 
 
 OrbitGuard **does not discover new objects** and **does not ingest telescope data**.
-
----
 
 ## Core Architecture
 
@@ -32,7 +30,7 @@ OrbitGuard follows a **job-based scanning model** similar to production batch-pr
 ### 2. Scan Jobs
 A scan job represents a request like:
 
-> “Scan all known objects between time T₁ and T₂ and flag anything within X km of Earth.”
+“Scan all known objects between time T₁ and T₂ and flag anything within X km of Earth.”
 
 Each job stores:
 - Time window
@@ -69,8 +67,6 @@ Each scan may produce zero or more **Risk Events**, containing:
 
 The physics layer is intentionally simplified to keep the project **software-engineering-centric**.
 
----
-
 ## Tech Stack
 
 **Backend**
@@ -98,3 +94,4 @@ python -m orbitguard.ingest.download_cad
 python -m orbitguard.ingest.ingest_cad_csv
 uvicorn orbitguard.api.main:app --reload
 python -m orbitguard.worker.run
+
