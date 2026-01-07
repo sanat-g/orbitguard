@@ -93,5 +93,12 @@ python -m orbitguard.db.init_db
 python -m orbitguard.ingest.download_cad
 python -m orbitguard.ingest.ingest_cad_csv
 uvicorn orbitguard.api.main:app --reload
+
+In a seperate terminal, launch the ui by running:
+cd ui
+python -m http.server 5500
+
+Submit a job request, then in a new terminal, run:
 python -m orbitguard.worker.run
+
 
