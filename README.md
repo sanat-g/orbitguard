@@ -3,6 +3,9 @@
 **OrbitGuard** is a planetary defense alerting system that evaluates known Near-Earth Objects (NEOs) using NASA/JPL close-approach data.  
 It is designed as a **backend engineering project**, focusing on **job processing, data ingestion, computation, and explainable system outputs** — with a simplified physics model that can be extended for larger-scale analysis.
 
+Click the image below to see a working demo of OrbitGuard!
+[![OrbitGuard Banner](images/orbitimage.jpg)](https://youtu.be/uPCg0sWM8Tg)
+
 ## What OrbitGuard Does
 
 OrbitGuard answers a single question:
@@ -100,5 +103,6 @@ python -m http.server 5500
 
 Submit a job request, then in a new terminal, run:
 python -m orbitguard.worker.run
+
 
 
